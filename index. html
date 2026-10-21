@@ -1,0 +1,235 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Retro Neon Snake</title>
+<style>
+:root {
+  --green:#9aff23;
+  --bg:#06130a;
+  --panel:#0b2411;
+  --red:#ff4141;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; min-height:100dvh; color:var(--green);
+  background:radial-gradient(ellipse at top,#15351a,var(--bg) 65%);
+  font-family:monospace; display:flex; justify-content:center;
+  align-items:center; padding:16px; user-select:none;
+}
+.app { width:min(100%,440px); text-align:center; }
+h1 { font-size:clamp(38px,12vw,64px); margin:8px 0;
+  text-shadow:0 0 14px #78ff35; letter-spacing:5px; }
+.sub { color:#caff9b; letter-spacing:4px; }
+.card {
+  background:#091d0e; border:2px solid #4d9e29;
+  border-radius:18px; padding:16px; margin:16px 0;
+  box-shadow:0 0 20px #2b751b33,inset 0 0 20px #1b511522;
+}
+.snakes { display:flex; justify-content:space-around; gap:8px; }
+.snake-card { flex:1; border:1px solid #416d2b; border-radius:10px;
+  padding:8px 2px; color:#d5ffb4; font-size:11px; }
+.snake-card canvas { width:100%; height:54px; image-rendering:pixelated; }
+button {
+  color:var(--green); background:#0c2b13; border:2px solid #559c2d;
+  border-radius:12px; padding:15px 10px; font:bold 16px monospace;
+  cursor:pointer; touch-action:manipulation;
+}
+button:active { background:#244c1d; transform:scale(.97); }
+.menu-btn { width:100%; margin:6px 0; }
+.primary { border-color:var(--green); box-shadow:0 0 12px #7fff2633; }
+.stats { display:flex; justify-content:space-between; font-size:14px; }
+#board { display:block; width:100%; aspect-ratio:1/1;
+  border:3px solid var(--green); border-radius:8px;
+  background:#9cbe52; image-rendering:pixelated; touch-action:none; }
+.hidden { display:none!important; }
+#game { position:relative; }
+#pause { position:absolute; right:9px; top:9px; padding:7px 12px; }
+.controls {
+  display:grid; grid-template-columns:repeat(3, minmax(0,1fr));
+  grid-template-rows:repeat(2,68px); gap:9px;
+  max-width:290px; margin:16px auto 4px;
+}
+.controls button {
+  padding:0; font-size:32px; border:3px solid var(--green);
+  background:linear-gradient(145deg,#17451c,#07190b);
+  box-shadow:0 0 10px #72ff2b66,inset 0 0 9px #72ff2b33;
+  animation:flash 1.2s infinite alternate;
+}
+.controls button:nth-child(2) { grid-column:2; grid-row:2; }
+.controls button:nth-child(3) { grid-column:1; grid-row:2; }
+.controls button:nth-child(4) { grid-column:3; grid-row:2; }
+@keyframes flash {
+  from { box-shadow:0 0 5px #72ff2b44; }
+  to { box-shadow:0 0 17px #72ff2baa; }
+}
+#message { color:#d5ffb4; min-height:24px; }
+footer { color:#6c9c55; font-size:11px; margin:16px; }
+</style>
+</head>
+<body>
+<main class="app">
+  <div class="sub">★ CLASSIC ARCADE ★</div>
+  <h1> SNAKE </h1>
+
+  <section id="menu" class="card">
+    <div class="snakes">
+      <div class="snake-card"><canvas id="baby" width="100" height="54"></canvas>BABY</div>
+      <div class="snake-card"><canvas id="classic" width="100" height="54"></canvas>CLASSIC</div>
+      <div class="snake-card"><canvas id="beast" width="100" height="54"></canvas>BEAST</div>
+    </div>
+    <p>CHOOSE YOUR CHALLENGE</p>
+    <button class="menu-btn" onclick="start('easy')">🐣 EASY — BABY SNAKE</button>
+    <button class="menu-btn" onclick="start('normal')">🐍 NORMAL — CLASSIC</button>
+    <button class="menu-btn" onclick="start('fast')">☠ FAST — NIGHTMARE</button>
+    <p id="bestMenu">BEST SCORE: 0</p>
+  </section>
+
+  <section id="game" class="hidden">
+    <div class="stats card">
+      <span>SCORE: <b id="score">0</b></span>
+      <span>BEST: <b id="best">0</b></span>
+    </div>
+    <button id="pause" onclick="pauseGame()">Ⅱ</button>
+    <canvas id="board" width="360" height="360"></canvas>
+    <div id="message"></div>
+    <div class="controls">
+      <button onclick="turn(0,-1)">▲</button>
+      <button onclick="turn(-1,0)">◀</button>
+      <button onclick="turn(1,0)">▶</button>
+      <button onclick="turn(0,1)">▼</button>
+    </div>
+    <button class="menu-btn" onclick="goMenu()">⌂ MAIN MENU</button>
+  </section>
+  <footer>RETRO NEON SNAKE · PIXEL ARCADE</footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const ctx = $("board").getContext("2d");
+const N = 20, tile = 18;
+let snake, dir, next, food, score, timer, running = false;
+let mode = "normal", paused = false, over = false;
+let best = Number(localStorage.getItem("retroSnakeBest") || 0);
+
+$("best").textContent = best;
+$("bestMenu").textContent = "BEST SCORE: " + best;
+
+function pixelSnake(id, color, cute=false, scary=false) {
+  const c = $(id).getContext("2d");
+  c.clearRect(0,0,100,54);
+  c.fillStyle = color;
+  const blocks = cute
+    ? [[18,30],[30,30],[42,30],[42,18],[54,18]]
+    : scary
+    ? [[8,30],[20,30],[32,30],[32,18],[44,18],[56,18],[56,30]]
+    : [[8,30],[20,30],[32,30],[32,18],[44,18],[56,18]];
+  for (const [x,y] of blocks) c.fillRect(x,y,11,11);
+  c.fillStyle = "#07130a";
+  c.fillRect(scary?62:59, scary?20:20,3,3);
+  if (scary) {
+    c.fillStyle="#ff4141"; c.fillRect(66,28,4,6);
+  }
+}
+pixelSnake("baby","#caff78",true);
+pixelSnake("classic","#9aff23");
+pixelSnake("beast","#ff4141",false,true);
+
+function start(m) {
+  mode = m; score = 0; paused = false; over = false;
+  snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+  dir = {x:1,y:0}; next = {x:1,y:0};
+  spawn(); $("score").textContent=0;
+  $("message").textContent="";
+  $("menu").classList.add("hidden");
+  $("game").classList.remove("hidden");
+  running = true; clearInterval(timer);
+  timer = setInterval(step, m==="easy"?190:m==="normal"?130:75);
+  draw();
+}
+function spawn() {
+  do {
+    food={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N)};
+  } while(snake.some(p=>p.x===food.x&&p.y===food.y));
+}
+function turn(x,y) {
+  if (!running || paused || over) return;
+  if (x===-dir.x && y===-dir.y) return;
+  next={x,y};
+}
+function step() {
+  if (!running || paused || over) return;
+  dir=next;
+  const head={x:snake[0].x+dir.x,y:snake[0].y+dir.y};
+  const eating=head.x===food.x&&head.y===food.y;
+  const body=eating?snake:snake.slice(0,-1);
+  if(head.x<0||head.x>=N||head.y<0||head.y>=N||
+     body.some(p=>p.x===head.x&&p.y===head.y)) {
+    over=true; $("message").textContent="GAME OVER — TAP TO RESTART";
+    $("board").onclick=()=>start(mode);
+    clearInterval(timer); return;
+  }
+  snake.unshift(head);
+  if(eating) {
+    score++; $("score").textContent=score;
+    if(score>best) {
+      best=score; localStorage.setItem("retroSnakeBest",best);
+      $("best").textContent=best; $("bestMenu").textContent="BEST SCORE: "+best;
+    }
+    spawn();
+  } else snake.pop();
+  draw();
+}
+function draw() {
+  ctx.fillStyle="#9cbe52"; ctx.fillRect(0,0,360,360);
+  ctx.strokeStyle="#83a842"; ctx.lineWidth=.5;
+  for(let i=0;i<=N;i++){
+    ctx.beginPath();ctx.moveTo(i*tile,0);ctx.lineTo(i*tile,360);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,i*tile);ctx.lineTo(360,i*tile);ctx.stroke();
+  }
+  ctx.fillStyle="#d73535";
+  ctx.beginPath();ctx.arc(food.x*tile+9,food.y*tile+9,7,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#9aff23";
+  snake.forEach((p,i)=>{
+    ctx.fillStyle=i===0?"#193817":"#315d1d";
+    ctx.fillRect(p.x*tile+1,p.y*tile+1,tile-2,tile-2);
+    if(i===0){
+      ctx.fillStyle="#eaffc9";
+      ctx.fillRect(p.x*tile+5,p.y*tile+5,3,3);
+      ctx.fillRect(p.x*tile+11,p.y*tile+5,3,3);
+    }
+  });
+}
+function pauseGame() {
+  if(over) return;
+  paused=!paused;
+  $("message").textContent=paused?"PAUSED":"";
+}
+function goMenu() {
+  running=false; clearInterval(timer);
+  $("game").classList.add("hidden");
+  $("menu").classList.remove("hidden");
+  $("board").onclick=null;
+}
+document.addEventListener("keydown",e=>{
+  const keys={ArrowUp:[0,-1],w:[0,-1],ArrowDown:[0,1],s:[0,1],
+    ArrowLeft:[-1,0],a:[-1,0],ArrowRight:[1,0],d:[1,0]};
+  if(keys[e.key]) {e.preventDefault();turn(...keys[e.key]);}
+  if(e.key===" "){e.preventDefault();pauseGame();}
+});
+let touchX=0,touchY=0;
+$("board").addEventListener("touchstart",e=>{
+  touchX=e.changedTouches[0].clientX;touchY=e.changedTouches[0].clientY;
+},{passive:true});
+$("board").addEventListener("touchend",e=>{
+  const dx=e.changedTouches[0].clientX-touchX;
+  const dy=e.changedTouches[0].clientY-touchY;
+  if(Math.max(Math.abs(dx),Math.abs(dy))<20)return;
+  if(Math.abs(dx)>Math.abs(dy)) turn(Math.sign(dx),0);
+  else turn(0,Math.sign(dy));
+},{passive:true});
+</script>
+</body>
+</html>
